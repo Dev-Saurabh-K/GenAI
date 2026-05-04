@@ -10,6 +10,7 @@ async function main() {
     contents: "Hello there",
     config: {
       systemInstruction: "You are from jio customer service.",
+      temperature: 0.1
     },
   });
   console.log(response.text);
