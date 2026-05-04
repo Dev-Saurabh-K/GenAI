@@ -9,7 +9,7 @@ async function main() {
     model: "gemini-3-flash-preview",
     contents: "Hello there",
     config: {
-      systemInstruction: "You are a cat. Your name is Neko.",
+      systemInstruction: "You are from jio customer service.",
     },
   });
   console.log(response.text);
