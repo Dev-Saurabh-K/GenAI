@@ -1,46 +1,59 @@
 import dotenv from "dotenv";
 dotenv.config();
+import { GoogleGenAI, Type } from '@google/genai';
 
-import { GoogleGenAI } from "@google/genai";
-import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
-
-const ingredientSchema = z.object({
-  name: z.string().describe("Name of the ingredient."),
-  quantity: z.string().describe("Quantity of the ingredient, including units."),
-});
-
-const recipeSchema = z.object({
-  recipe_name: z.string().describe("The name of the recipe."),
-  prep_time_minutes: z.number().optional().describe("Optional time in minutes to prepare the recipe."),
-  ingredients: z.array(ingredientSchema),
-  instructions: z.array(z.string()),
-});
-
+// Configure the client
 const ai = new GoogleGenAI({apiKey:process.env.apiKey});
 
-const prompt = `
-Please extract the recipe from the following text.
-The user wants to make delicious chocolate chip cookies.
-They need 2 and 1/4 cups of all-purpose flour, 1 teaspoon of baking soda,
-1 teaspoon of salt, 1 cup of unsalted butter (softened), 3/4 cup of granulated sugar,
-3/4 cup of packed brown sugar, 1 teaspoon of vanilla extract, and 2 large eggs.
-For the best part, they'll need 2 cups of semisweet chocolate chips.
-First, preheat the oven to 375°F (190°C). Then, in a small bowl, whisk together the flour,
-baking soda, and salt. In a large bowl, cream together the butter, granulated sugar, and brown sugar
-until light and fluffy. Beat in the vanilla and eggs, one at a time. Gradually beat in the dry
-ingredients until just combined. Finally, stir in the chocolate chips. Drop by rounded tablespoons
-onto ungreased baking sheets and bake for 9 to 11 minutes.
-`;
+// Define the function declaration for the model
+const scheduleMeetingFunctionDeclaration = {
+  name: 'schedule_meeting',
+  description: 'Schedules a meeting with specified attendees at a given time and date.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      attendees: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: 'List of people attending the meeting.',
+      },
+      date: {
+        type: Type.STRING,
+        description: 'Date of the meeting (e.g., "2024-07-29")',
+      },
+      time: {
+        type: Type.STRING,
+        description: 'Time of the meeting (e.g., "15:00")',
+      },
+      topic: {
+        type: Type.STRING,
+        description: 'The subject or topic of the meeting.',
+      },
+    },
+    required: ['attendees', 'date', 'time', 'topic'],
+  },
+};
 
+// Send request with function declarations
 const response = await ai.models.generateContent({
-  model: "gemini-3-flash-preview",
-  contents: prompt,
+  model: 'gemini-3-flash-preview',
+  contents: 'Schedule a meeting with Bob and Alice for 03/27/2025 at 10:00 AM about the Q3 planning.',
   config: {
-    responseMimeType: "application/json",
-    responseJsonSchema: zodToJsonSchema(recipeSchema),
+    tools: [{
+      functionDeclarations: [scheduleMeetingFunctionDeclaration]
+    }],
   },
 });
 
-const recipe = recipeSchema.parse(JSON.parse(response.text));
-console.log(recipe);
+// Check for function calls in the response
+if (response.functionCalls && response.functionCalls.length > 0) {
+  const functionCall = response.functionCalls[0]; // Assuming one function call
+  console.log(`Function to call: ${functionCall.name}`);
+  console.log(`ID: ${functionCall.id}`);
+  console.log(`Arguments: ${JSON.stringify(functionCall.args)}`);
+  // In a real app, you would call your actual function here:
+  // const result = await scheduleMeeting(functionCall.args);
+} else {
+  console.log("No function call found in the response.");
+  console.log(response.text);
+}
