@@ -104,7 +104,7 @@ async function runAgent(userProblem) {
     while(true){
     
    const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-3-flash-preview",
     contents: History,
     config: {
         systemInstruction: `You are an AI Agent, You have access of 3 available tools like to
@@ -182,6 +182,12 @@ async function main() {
 
 
 main();
+
+
+
+
+
+
 
 
 
