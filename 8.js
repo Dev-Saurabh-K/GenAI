@@ -1,82 +1,68 @@
 import dotenv from "dotenv";
-dotenv.config();
 import { GoogleGenAI } from "@google/genai";
-import readlineSync from 'readline-sync';
+import readlineSync from "readline-sync";
 import { exec } from "child_process";
 import { promisify } from "util";
-import os from 'os'
+import os from "os";
+
+dotenv.config();
 
 const platform = os.platform();
-
 const asyncExecute = promisify(exec);
 
 const History = [];
 const ai = new GoogleGenAI({ apiKey: process.env.apiKey });
 
+//tool to run terminal command
 
-//  Tool create karte hai, jo kisi bhi terminal/ shell command ko execute kar sakta hai
+async function executeCommand({ command }) {
+  try {
+    const { stdout, stderr } = await asyncExecute(command);
 
-async function executeCommand({command}) {
-     
-    try{
-    const {stdout, stderr} = await asyncExecute(command);
-
-    if(stderr){
-        return `Error: ${stderr}`
+    if (stderr) {
+      return `Error: ${stderr}`;
     }
-
-    return `Success: ${stdout} || Task executed completely`
-
-    }
-    catch(error){
-      
-        return `Error: ${error}`
-    }
-    
+    return `Success: ${stdout} || Task executed completelt`;
+  } catch (error) {
+    return `Error: ${error}`;
+  }
+  // console.log(res)
 }
-
-
 
 const executeCommandDeclaration = {
-    name: "executeCommand",
-    description:"Execute a single terminal/shell command. A command can be to create a folder, file, write on a file, edit the file or delete the file",
-    parameters:{
-        type:'OBJECT',
-        properties:{
-            command:{
-                type:'STRING',
-                description: 'It will be a single terminal command. Ex: "mkdir calculator"'
-            },
-        },
-        required: ['command']   
-    }
-
-}
-
+  name: "executeCommand",
+  description:
+    "Execute a single terminal/shell command, A command can be to create a folder, file, write on a file, edit the file or delete the file",
+  parameters: {
+    type: "OBJECT",
+    properties: {
+      command: {
+        type: "STRING",
+        description:
+          'It will be a single terminal command, Ex: "mkdir calculator',
+      },
+    },
+    required: ["command"],
+  },
+};
 
 const availableTools = {
-   executeCommand
-}
-
-
+  executeCommand,
+};
 
 async function runAgent(userProblem) {
+  History.push({
+    role: "user",
+    parts: [{ text: userProblem }],
+  });
 
-    History.push({
-        role:'user',
-        parts:[{text:userProblem}]
-    });
-
-   
-    while(true){
-    
-   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: History,
-    config: {
+  while (true) {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: History,
+      config: {
         systemInstruction: `You are an expert AI agent specializing in automated frontend web development. Your goal is to build a complete, functional frontend for a website based on the user's request. You operate by executing terminal commands one at a time using the 'executeCommand' tool.
-
-Your user's operating system is: ${platform}
+            Your user's operating system is: ${platform}
 
 <-- Core Mission: The PLAN -> EXECUTE -> VALIDATE -> REPEAT loop -->
 You must follow this workflow for every task:
@@ -142,82 +128,63 @@ Unless the user specifies otherwise, follow this plan:
 9.  **Validate JS**: Read the JS file back to verify its content.
 
 <-- Final Step -->
-Once all files are created and validated, your final response MUST be a plain text message to the user, summarizing what you did and where the files are located. Do not call any more tools at this point.
-`,
-    tools: [{
-      functionDeclarations: [executeCommandDeclaration]
-    }],
-    },
-   });
-
-
-   if(response.functionCalls&&response.functionCalls.length>0){
-    
-    console.log(response.functionCalls);
-    const {name,args} = response.functionCalls[0];
-
-    const funCall =  availableTools[name];
-    const result = await funCall(args);
-
-    const functionResponsePart = {
-      name: name,
-      response: {
-        result: result,
+Once all files are created and validated, your final response MUST be a plain text message to the user, summarizing what you did and where the files are located. Do not call any more tools at this point.`,
+        tools: [
+          {
+            functionDeclarations: [executeCommandDeclaration],
+          },
+        ],
       },
-    };
-   
-    // model 
-    History.push({
-      role: "model",
-      parts: [
-        {
-          functionCall: response.functionCalls[0],
-        },
-      ],
     });
+    if (response.functionCalls && response.functionCalls.length > 0) {
+      console.log(`Model requested ${response.functionCalls.length} commands.`);
 
-    // result Ko history daalna
+      // 1. CRITICAL FIX: Push the exact content object from the model's candidate.
+      // This automatically includes role: "model" and the full parts array (thoughts + calls)
+      History.push(response.candidates[0].content);
 
-    History.push({
-      role: "user",
-      parts: [
-        {
-          functionResponse: functionResponsePart,
-        },
-      ],
-    });
-   }
-   else{
+      const functionResponseParts = [];
 
-    History.push({
-        role:'model',
-        parts:[{text:response.text}]
-    })
-    console.log(response.text);
-    break;
-   }
+      // 2. Loop through ALL function calls
+      for (const call of response.functionCalls) {
+        console.log(`Executing: ${call.args.command}`);
+        
+        const funCall = availableTools[call.name];
+        const result = await funCall(call.args);
 
+        // Add the result to our array of responses
+        functionResponseParts.push({
+          functionResponse: {
+            name: call.name,
+            response: {
+              result: result,
+            },
+          },
+        });
+      }
 
-  }
+      // 3. Push all the results back to the history as the user
+      History.push({
+        role: "user",
+        parts: functionResponseParts,
+      });
 
-
-
-
+    } else {
+      // Also push the exact content for consistency
+      History.push(response.candidates[0].content);
+      console.log(response.text);
+      break;
+    }
+  //   console.log(response.functionCalls);
 }
-
+}
 
 async function main() {
-
-    console.log("I am a cursor: let's create a website");
-    const userProblem = readlineSync.question("Ask me anything--> ");
-    await runAgent(userProblem);
-    main();
+  // console.log("Ask and Build");
+  const userProblem = readlineSync.question("Ask and Build-->");
+  await runAgent(userProblem);
+  main();
 }
-
-
+// runAgent("make a fish selling website")
+// executeCommand("mkdir help")
 main();
-
-
-
-
-
